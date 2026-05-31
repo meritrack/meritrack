@@ -1,3 +1,4 @@
+// MériTrack v1.1 - Fixed pending approvals
 import { useState, useEffect, createContext, useContext } from "react";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
