@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://zjyfjgbblykjhornhilr.supabase.co";
@@ -1266,8 +1266,19 @@ function AppShell({ session }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("profiles").select("*").eq("id", session.user.id).single()
-      .then(({ data }) => { setProfile(data); setLoading(false); });
+    async function loadProfile() {
+      for (let i = 0; i < 3; i++) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .single();
+        if (data) { setProfile(data); setLoading(false); return; }
+        await new Promise(r => setTimeout(r, 800));
+      }
+      setLoading(false);
+    }
+    loadProfile();
   }, [session]);
 
   async function signOut() { await supabase.auth.signOut(); }
