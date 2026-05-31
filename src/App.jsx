@@ -492,12 +492,20 @@ function PendingApprovals() {
 
   async function loadAll() {
     setLoading(true);
-    const [{ data: c }, { data: r }] = await Promise.all([
-      supabase.from("merit_claims").select("*, profiles(full_name), merit_activities(name, is_time_based)").eq("status", "pending").order("claimed_at"),
-      supabase.from("reward_requests").select("*, profiles(full_name), reward_items(name, merit_cost)").eq("status", "pending").order("requested_at"),
+    const [{ data: c }, { data: r }, { data: profs }, { data: acts }, { data: rewItems }] = await Promise.all([
+      supabase.from("merit_claims").select("*").eq("status", "pending").order("claimed_at"),
+      supabase.from("reward_requests").select("*").eq("status", "pending").order("requested_at"),
+      supabase.from("profiles").select("id, full_name"),
+      supabase.from("merit_activities").select("id, name, is_time_based"),
+      supabase.from("reward_items").select("id, name, merit_cost"),
     ]);
-    setClaims(c || []);
-    setRewards(r || []);
+    const profMap = Object.fromEntries((profs||[]).map(p => [p.id, p]));
+    const actMap = Object.fromEntries((acts||[]).map(a => [a.id, a]));
+    const rewMap = Object.fromEntries((rewItems||[]).map(r => [r.id, r]));
+    const enrichedC = (c||[]).map(x => ({...x, profiles: profMap[x.kid_id], merit_activities: actMap[x.activity_id]}));
+    const enrichedR = (r||[]).map(x => ({...x, profiles: profMap[x.kid_id], reward_items: rewMap[x.reward_id]}));
+    setClaims(enrichedC);
+    setRewards(enrichedR);
     setLoading(false);
   }
 
