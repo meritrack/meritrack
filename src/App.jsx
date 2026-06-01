@@ -1,6 +1,6 @@
 // MériTrack v1.1 - Fixed pending approvals
 import { useState, useEffect, createContext, useContext } from "react";
-const { createClient } = require("@supabase/supabase-js");
+import { createClient } from "@supabase/supabase-js";
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://zjyfjgbblykjhornhilr.supabase.co";
