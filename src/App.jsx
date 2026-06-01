@@ -418,9 +418,13 @@ function ParentDashboard({ setPage }) {
       const [{ count: pc }, { count: pr }, { data: kids }] = await Promise.all([
         supabase.from("merit_claims").select("*", { count: "exact", head: true }).eq("status", "pending"),
         supabase.from("reward_requests").select("*", { count: "exact", head: true }).eq("status", "pending"),
-        supabase.from("profiles").select("*, merit_balances(*)").eq("role", "kid"),
+        supabase.from("profiles").select("*").eq("role", "kid"),
       ]);
-      setStats({ pendingClaims: pc || 0, pendingRewards: pr || 0, kids: kids || [] });
+      const kidsWithBal = await Promise.all((kids || []).map(async k => {
+        const { data: bal } = await supabase.from("merit_balances").select("*").eq("kid_id", k.id).single();
+        return {...k, merit_balances: bal ? [bal] : []};
+      }));
+      setStats({ pendingClaims: pc || 0, pendingRewards: pr || 0, kids: kidsWithBal });
       setLoading(false);
     }
     load();
@@ -645,11 +649,19 @@ function KidsOverview() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("profiles").select("*, merit_balances(*)").eq("role", "kid").then(({ data }) => {
-      setKids(data || []);
-      if (data?.length) setSelected(data[0].id);
+    async function loadKids() {
+      const { data: kids } = await supabase.from("profiles").select("*").eq("role", "kid");
+      if (kids) {
+        const withBalances = await Promise.all(kids.map(async k => {
+          const { data: bal } = await supabase.from("merit_balances").select("*").eq("kid_id", k.id).single();
+          return {...k, merit_balances: bal ? [bal] : []};
+        }));
+        setKids(withBalances);
+        if (withBalances.length) setSelected(withBalances[0].id);
+      }
       setLoading(false);
-    });
+    }
+    loadKids();
   }, []);
 
   useEffect(() => {
