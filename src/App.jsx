@@ -90,6 +90,8 @@ const css = `
   .btn-gold { background: var(--gold); color: white; }
   .btn-gold:hover { background: #b8841f; }
   .btn-ghost { background: transparent; color: var(--navy); border: 1.5px solid var(--navy); }
+  .sidebar-footer .btn-ghost { color: rgba(255,255,255,0.65); border-color: rgba(255,255,255,0.3); }
+  .sidebar-footer .btn-ghost:hover { background: rgba(255,255,255,0.1); color: white; border-color: white; }
   .btn-ghost:hover { background: var(--navy); color: white; }
   .btn-danger { background: var(--red); color: white; }
   .btn-danger:hover { background: #a93226; }
