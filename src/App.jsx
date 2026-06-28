@@ -1131,10 +1131,14 @@ function ClaimMerits() {
 }
 
 // ── REQUEST REWARD (KID) ──────────────────────────────────────────────────────
+const FINANCIAL_TRUST_THRESHOLD = 1000;
+const FINANCIAL_BALANCE_FLOOR = 100;
+
 function RequestReward() {
   const { profile } = useApp();
   const [rewards, setRewards] = useState([]);
   const [balance, setBalance] = useState(0);
+  const [totalEarned, setTotalEarned] = useState(0);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -1142,13 +1146,36 @@ function RequestReward() {
   useEffect(() => {
     Promise.all([
       supabase.from("reward_items").select("*").eq("is_active", true).order("merit_cost"),
-      supabase.from("merit_balances").select("current_balance").eq("kid_id", profile.id).single(),
-    ]).then(([{ data: r }, { data: b }]) => { setRewards(r || []); setBalance(b?.current_balance ?? 0); });
+      supabase.from("merit_balances").select("current_balance, total_earned").eq("kid_id", profile.id).single(),
+    ]).then(([{ data: r }, { data: b }]) => {
+      setRewards(r || []);
+      setBalance(b?.current_balance ?? 0);
+      setTotalEarned(b?.total_earned ?? 0);
+    });
   }, [profile.id]);
+
+  function getFinancialLockReason(r) {
+    if (!r.is_financial) return null;
+    if (totalEarned < FINANCIAL_TRUST_THRESHOLD)
+      return `🔒 Unlocks at ${FINANCIAL_TRUST_THRESHOLD} total merits earned (you have ${totalEarned})`;
+    if (balance - r.merit_cost < FINANCIAL_BALANCE_FLOOR)
+      return `🔒 You must keep ${FINANCIAL_BALANCE_FLOOR} merits after spending (need ${r.merit_cost + FINANCIAL_BALANCE_FLOOR - balance} more)`;
+    return null;
+  }
 
   async function handleRequest() {
     if (!selected) return;
     if (balance < selected.merit_cost) { setMsg({ type: "error", text: "Not enough merits for this reward." }); return; }
+    if (selected.is_financial) {
+      if (totalEarned < FINANCIAL_TRUST_THRESHOLD) {
+        setMsg({ type: "error", text: `This reward requires ${FINANCIAL_TRUST_THRESHOLD} total merits earned. You have ${totalEarned}.` });
+        return;
+      }
+      if (balance - selected.merit_cost < FINANCIAL_BALANCE_FLOOR) {
+        setMsg({ type: "error", text: `You must keep at least ${FINANCIAL_BALANCE_FLOOR} merits after redeeming a financial reward.` });
+        return;
+      }
+    }
     setLoading(true); setMsg(null);
     const { error } = await supabase.from("reward_requests").insert({
       kid_id: profile.id, reward_id: selected.id, merits_held: selected.merit_cost,
@@ -1158,25 +1185,42 @@ function RequestReward() {
     setLoading(false);
   }
 
+  const trustReached = totalEarned >= FINANCIAL_TRUST_THRESHOLD;
+
   return (
     <div>
       <div className="page-header"><h1>Request a Reward</h1>
-        <p>Your balance: <strong style={{ color: "var(--navy)" }}>{balance} merits</strong></p>
+        <p>Your balance: <strong style={{ color: "var(--navy)" }}>{balance} merits</strong> · Total earned: <strong style={{ color: "var(--grey-600)" }}>{totalEarned}</strong></p>
       </div>
+
+      {!trustReached && (
+        <div className="alert alert-info" style={{ marginBottom: 20 }}>
+          🔒 Financial rewards (Revolut, Mamina/Tatina, budgets) unlock at <strong>{FINANCIAL_TRUST_THRESHOLD} total merits earned</strong>. You're at <strong>{totalEarned}</strong> — {FINANCIAL_TRUST_THRESHOLD - totalEarned} to go!
+        </div>
+      )}
+
       {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14, marginBottom: 24 }}>
-        {rewards.map(r => (
-          <div key={r.id} className={`cat-card ${selected?.id === r.id ? "selected" : ""} ${balance < r.merit_cost ? "opacity-50" : ""}`}
-            onClick={() => balance >= r.merit_cost && setSelected(r)}
-            style={{ opacity: balance < r.merit_cost ? 0.45 : 1 }}>
-            <div className="cat-card-name">{r.name}</div>
-            <div className="cat-card-pts">{r.merit_cost}<span> merits</span></div>
-            {r.advance_notice_hours > 0 && <div className="cat-card-notes">⏰ {r.advance_notice_hours}h notice required</div>}
-            {r.notes && <div className="cat-card-notes">{r.notes}</div>}
-            {balance < r.merit_cost && <div className="cat-card-notes" style={{ color: "var(--red)" }}>Need {r.merit_cost - balance} more merits</div>}
-          </div>
-        ))}
+        {rewards.map(r => {
+          const cantAfford = balance < r.merit_cost;
+          const lockReason = getFinancialLockReason(r);
+          const isLocked = !!lockReason;
+          const isDisabled = cantAfford || isLocked;
+          return (
+            <div key={r.id}
+              className={`cat-card ${selected?.id === r.id ? "selected" : ""}`}
+              onClick={() => !isDisabled && setSelected(r)}
+              style={{ opacity: isDisabled ? 0.5 : 1, cursor: isDisabled ? "default" : "pointer" }}>
+              <div className="cat-card-name">{r.name}{r.is_financial && <span style={{ marginLeft: 6, fontSize: "0.72rem", background: "var(--gold-light)", color: "#8B5E0A", padding: "2px 7px", borderRadius: 99, fontWeight: 600 }}>💰 financial</span>}</div>
+              <div className="cat-card-pts">{r.merit_cost}<span> merits</span></div>
+              {r.advance_notice_hours > 0 && <div className="cat-card-notes">⏰ {r.advance_notice_hours}h notice required</div>}
+              {r.notes && <div className="cat-card-notes">{r.notes}</div>}
+              {cantAfford && !isLocked && <div className="cat-card-notes" style={{ color: "var(--red)" }}>Need {r.merit_cost - balance} more merits</div>}
+              {lockReason && <div className="cat-card-notes" style={{ color: "var(--gold)", fontWeight: 600 }}>{lockReason}</div>}
+            </div>
+          );
+        })}
       </div>
 
       {selected && (
