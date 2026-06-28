@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://zjyfjgbblykjhornhilr.supabase.co";
-const const SUPABASE_ANON = "sb_publishable_aRxZ-cinWRzxLE7Aapv_Zg_Jmb5-AhN";
+const SUPABASE_ANON = "sb_publishable_aRxZ-cinWRzxLE7Aapv_Zg_Jmb5-AhN";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ── STYLES ────────────────────────────────────────────────────────────────────
