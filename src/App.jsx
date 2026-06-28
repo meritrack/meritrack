@@ -664,6 +664,82 @@ function PendingApprovals() {
   );
 }
 
+// ── SUSPENSION STATUS PANEL ───────────────────────────────────────────────────
+function SuspensionStatusPanel({ kidId }) {
+  const [statuses, setStatuses] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { if (kidId) loadStatuses(); }, [kidId]);
+
+  async function loadStatuses() {
+    setLoading(true);
+    const { data } = await supabase.from("baseline_status").select("*").eq("kid_id", kidId);
+    const now = new Date();
+    // Auto-clear expired suspensions
+    const expired = (data || []).filter(s => s.is_suspended && new Date(s.suspension_ends_at) < now);
+    if (expired.length) {
+      await Promise.all(expired.map(s =>
+        supabase.from("baseline_status").update({ is_suspended: false }).eq("id", s.id)
+      ));
+    }
+    const { data: fresh } = await supabase.from("baseline_status").select("*").eq("kid_id", kidId);
+    setStatuses(fresh || []);
+    setLoading(false);
+  }
+
+  async function liftSuspension(id) {
+    await supabase.from("baseline_status").update({ is_suspended: false }).eq("id", id);
+    loadStatuses();
+  }
+
+  if (loading) return null;
+
+  const statusMap = Object.fromEntries((statuses || []).map(s => [s.baseline_type, s]));
+  const now = new Date();
+  const anyActive = PRIVILEGE_TYPES.some(p => {
+    const s = statusMap[p.type];
+    return s?.is_suspended && new Date(s.suspension_ends_at) > now;
+  });
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>🔐 Privilege Status</div>
+        {anyActive && <span className="badge badge-declined">Suspensions active</span>}
+        {!anyActive && <span className="badge badge-approved">All clear</span>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {PRIVILEGE_TYPES.map(p => {
+          const s = statusMap[p.type];
+          const suspended = s?.is_suspended && new Date(s.suspension_ends_at) > now;
+          return (
+            <div key={p.type} style={{
+              display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+              borderRadius: "var(--radius-sm)", background: suspended ? "var(--red-light)" : "var(--green-light)",
+              border: `1px solid ${suspended ? "#f5c6c2" : "#b8dfc8"}`,
+            }}>
+              <span style={{ fontSize: "1.1rem", width: 24, textAlign: "center" }}>{p.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: "0.9rem", color: suspended ? "var(--red)" : "var(--green)" }}>{p.label}</div>
+                {suspended && (
+                  <div style={{ fontSize: "0.78rem", color: "var(--grey-600)", marginTop: 2 }}>
+                    Suspended until {fmtDate(s.suspension_ends_at)}
+                    {s.suspension_reason ? ` · ${s.suspension_reason}` : ""}
+                  </div>
+                )}
+              </div>
+              {suspended
+                ? <button className="btn btn-sm btn-ghost" style={{ borderColor: "var(--red)", color: "var(--red)", flexShrink: 0 }} onClick={() => liftSuspension(s.id)}>Lift Early</button>
+                : <span style={{ fontSize: "0.78rem", color: "var(--green)", fontWeight: 600 }}>● Active</span>
+              }
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── KIDS OVERVIEW (PARENT) ────────────────────────────────────────────────────
 function KidsOverview() {
   const [kids, setKids] = useState([]);
@@ -724,6 +800,7 @@ function KidsOverview() {
               <div key={l} className={`stat-card ${c}`}><div className="stat-value">{v}</div><div className="stat-label">{l}</div></div>
             ))}
           </div>
+          <SuspensionStatusPanel kidId={selected} />
           {kid.goal?.reward_items && (() => {
             const g = kid.goal.reward_items;
             const currentBal = bal?.current_balance ?? 0;
@@ -812,7 +889,21 @@ function IssueDemerit() {
           last_updated: new Date().toISOString(),
         }).eq("kid_id", kidId);
       }
-      setMsg({ type: "success", text: `Demerit issued. ${b.demerit_points} points deducted.` });
+      // Write suspension to baseline_status if applicable
+      if (b.suspension_type && b.suspension_type !== "none" && suspUntil) {
+        await supabase.from("baseline_status").upsert({
+          kid_id: kidId,
+          baseline_type: b.suspension_type,
+          is_suspended: true,
+          suspension_reason: note || b.name,
+          suspended_by: profile.id,
+          suspension_ends_at: suspUntil,
+        }, { onConflict: "kid_id,baseline_type" });
+      }
+      const privLabel = b.suspension_type && b.suspension_type !== "none"
+        ? ` · ${PRIVILEGE_TYPES.find(p => p.type === b.suspension_type)?.label ?? b.suspension_type} suspended until ${fmtDate(suspUntil)}.`
+        : "";
+      setMsg({ type: "success", text: `Demerit issued. ${b.demerit_points} points deducted.${privLabel}` });
       setKidId(""); setBehaviourId(""); setNote("");
     } else {
       setMsg({ type: "error", text: error.message });
@@ -1154,12 +1245,13 @@ function KidDashboard({ setPage }) {
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [streak, setStreak] = useState(0);
   const [approvedRewardCount, setApprovedRewardCount] = useState(0);
+  const [activeSuspensions, setActiveSuspensions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { load(); }, [profile.id]);
 
   async function load() {
-    const [{ data: bal }, { count: cc }, { count: rc }, { data: claims }, { data: reqs }, { data: g }, { data: approvedClaims }, { count: arc }] = await Promise.all([
+    const [{ data: bal }, { count: cc }, { count: rc }, { data: claims }, { data: reqs }, { data: g }, { data: approvedClaims }, { count: arc }, { data: susp }] = await Promise.all([
       supabase.from("merit_balances").select("*").eq("kid_id", profile.id).single(),
       supabase.from("merit_claims").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
       supabase.from("reward_requests").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
@@ -1168,12 +1260,15 @@ function KidDashboard({ setPage }) {
       supabase.from("kid_goals").select("*, reward_items(id, name, merit_cost)").eq("kid_id", profile.id).maybeSingle(),
       supabase.from("merit_claims").select("claimed_at").eq("kid_id", profile.id).eq("status", "approved").order("claimed_at", { ascending: false }).limit(50),
       supabase.from("reward_requests").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "approved"),
+      supabase.from("baseline_status").select("*").eq("kid_id", profile.id).eq("is_suspended", true),
     ]);
     setBalance(bal);
     setPending({ claims: cc || 0, rewards: rc || 0 });
     setGoal(g);
     setStreak(computeStreak(approvedClaims || []));
     setApprovedRewardCount(arc || 0);
+    const now = new Date();
+    setActiveSuspensions((susp || []).filter(s => new Date(s.suspension_ends_at) > now));
     const all = [
       ...(claims || []).map(x => ({ type: "earn", label: x.merit_activities?.name, pts: x.claimed_merits, date: x.claimed_at, status: x.status })),
       ...(reqs || []).map(x => ({ type: "spend", label: x.reward_items?.name, pts: x.merits_held, date: x.requested_at, status: x.status })),
@@ -1206,6 +1301,16 @@ function KidDashboard({ setPage }) {
         <div className="balance-hero-value">{balance?.current_balance ?? 0}</div>
         <div className="balance-hero-sub">Total earned: {balance?.total_earned ?? 0} · Total spent: {balance?.total_spent ?? 0}</div>
       </div>
+
+      {activeSuspensions.length > 0 && (
+        <div className="alert alert-error" style={{ marginBottom: 20 }}>
+          <strong>🚫 Suspended privileges:</strong>{" "}
+          {activeSuspensions.map(s => {
+            const p = PRIVILEGE_TYPES.find(p => p.type === s.baseline_type);
+            return `${p?.icon ?? ""} ${p?.label ?? s.baseline_type} (until ${fmtDate(s.suspension_ends_at)})`;
+          }).join(" · ")}
+        </div>
+      )}
 
       {pending.claims + pending.rewards > 0 && (
         <div className="alert alert-info" style={{ marginBottom: 20 }}>
@@ -1349,6 +1454,15 @@ function ClaimMerits() {
 // ── REQUEST REWARD (KID) ──────────────────────────────────────────────────────
 const FINANCIAL_TRUST_THRESHOLD = 1000;
 const FINANCIAL_BALANCE_FLOOR = 100;
+
+const PRIVILEGE_TYPES = [
+  { type: "sleepover",     label: "Sleepovers",              icon: "🌙" },
+  { type: "outing",        label: "Outings",                 icon: "🚶" },
+  { type: "revolut",       label: "Revolut Top-ups",         icon: "💳" },
+  { type: "screen_time",   label: "Screen Time",             icon: "📱" },
+  { type: "mamina_tatina", label: "Mamina & Tatina Rewards", icon: "👵" },
+  { type: "full",          label: "All Privileges",          icon: "🚫" },
+];
 
 function RequestReward() {
   const { profile } = useApp();
