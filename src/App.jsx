@@ -263,6 +263,11 @@ const css = `
   .inline-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .merit-pts-badge { background: var(--navy); color: white; padding: 4px 12px; border-radius: 99px; font-size: 0.82rem; font-weight: 700; }
 
+  /* ── GOAL PROGRESS ── */
+  .progress-bar-wrap { background: var(--grey-200); border-radius: 99px; height: 10px; overflow: hidden; margin: 10px 0 8px; }
+  .progress-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--gold), #e8a82e); transition: width 0.5s ease; }
+  .progress-bar-fill.reached { background: linear-gradient(90deg, var(--green), #3a9b65); }
+
   @media (max-width: 768px) {
     .sidebar { width: 100%; min-height: auto; position: relative; }
     .main-content { margin-left: 0; padding: 16px; }
@@ -655,8 +660,11 @@ function KidsOverview() {
       const { data: kids } = await supabase.from("profiles").select("*").eq("role", "kid");
       if (kids) {
         const withBalances = await Promise.all(kids.map(async k => {
-          const { data: bal } = await supabase.from("merit_balances").select("*").eq("kid_id", k.id).single();
-          return {...k, merit_balances: bal ? [bal] : []};
+          const [{ data: bal }, { data: goal }] = await Promise.all([
+            supabase.from("merit_balances").select("*").eq("kid_id", k.id).single(),
+            supabase.from("kid_goals").select("*, reward_items(name, merit_cost)").eq("kid_id", k.id).maybeSingle(),
+          ]);
+          return {...k, merit_balances: bal ? [bal] : [], goal};
         }));
         setKids(withBalances);
         if (withBalances.length) setSelected(withBalances[0].id);
@@ -695,11 +703,33 @@ function KidsOverview() {
       </div>
       {kid && (
         <>
-          <div className="stat-grid" style={{ marginBottom: 24 }}>
+          <div className="stat-grid" style={{ marginBottom: 16 }}>
             {[["Current Balance", bal?.current_balance ?? 0, "navy"], ["Total Earned", bal?.total_earned ?? 0, "green"], ["Total Spent", bal?.total_spent ?? 0, "gold"], ["Total Deducted", bal?.total_deducted ?? 0, ""]].map(([l, v, c]) => (
               <div key={l} className={`stat-card ${c}`}><div className="stat-value">{v}</div><div className="stat-label">{l}</div></div>
             ))}
           </div>
+          {kid.goal?.reward_items && (() => {
+            const g = kid.goal.reward_items;
+            const currentBal = bal?.current_balance ?? 0;
+            const pct = Math.min(100, Math.round((currentBal / g.merit_cost) * 100));
+            const reached = currentBal >= g.merit_cost;
+            return (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>🎯 Saving for: <span style={{ color: "var(--gold)" }}>{g.name}</span></div>
+                  <span style={{ fontWeight: 700, fontSize: "0.88rem", color: reached ? "var(--green)" : "var(--gold)" }}>{pct}%</span>
+                </div>
+                <div style={{ fontSize: "0.85rem", color: "var(--grey-600)", marginBottom: 6 }}>{currentBal} / {g.merit_cost} merits</div>
+                <div className="progress-bar-wrap">
+                  <div className={`progress-bar-fill ${reached ? "reached" : ""}`} style={{ width: `${pct}%` }} />
+                </div>
+                {reached
+                  ? <div style={{ color: "var(--green)", fontWeight: 600, fontSize: "0.82rem" }}>🎉 Goal reached!</div>
+                  : <div style={{ color: "var(--grey-400)", fontSize: "0.82rem" }}>{g.merit_cost - currentBal} merits to go</div>
+                }
+              </div>
+            );
+          })()}
           <div className="card">
             <div className="card-title">Recent Activity</div>
             {history.length === 0 ? <div className="empty"><p>No activity yet</p></div> :
@@ -974,34 +1004,125 @@ function Catalogues() {
   );
 }
 
+// ── GOAL PROGRESS CARD ────────────────────────────────────────────────────────
+function GoalProgressCard({ goal, balance, onSetGoal, onClearGoal }) {
+  if (!goal?.reward_items) {
+    return (
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card-title">🎯 Savings Goal</div>
+        <div style={{ textAlign: "center", padding: "16px 0" }}>
+          <p style={{ color: "var(--grey-400)", marginBottom: 14, fontSize: "0.9rem" }}>No goal set — pick a reward you're saving toward.</p>
+          <button className="btn btn-ghost btn-sm" onClick={onSetGoal}>Set a Goal</button>
+        </div>
+      </div>
+    );
+  }
+
+  const reward = goal.reward_items;
+  const pct = Math.min(100, Math.round((balance / reward.merit_cost) * 100));
+  const remaining = Math.max(0, reward.merit_cost - balance);
+  const reached = balance >= reward.merit_cost;
+
+  return (
+    <div className="card" style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>🎯 Saving for: <span style={{ color: "var(--gold)" }}>{reward.name}</span></div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="btn btn-ghost btn-sm" onClick={onSetGoal}>Change</button>
+          <button onClick={onClearGoal} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--grey-400)", fontSize: "1rem", padding: "4px 6px" }} title="Clear goal">✕</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", color: "var(--grey-600)" }}>
+        <span><strong style={{ color: "var(--navy)", fontSize: "1.05rem" }}>{balance}</strong> / {reward.merit_cost} merits</span>
+        <span style={{ fontWeight: 700, color: reached ? "var(--green)" : "var(--gold)" }}>{pct}%</span>
+      </div>
+      <div className="progress-bar-wrap">
+        <div className={`progress-bar-fill ${reached ? "reached" : ""}`} style={{ width: `${pct}%` }} />
+      </div>
+      {reached
+        ? <div style={{ color: "var(--green)", fontWeight: 600, fontSize: "0.88rem" }}>🎉 Goal reached! Go to Request Reward to claim it.</div>
+        : <div style={{ color: "var(--grey-600)", fontSize: "0.85rem" }}>{remaining} more merit{remaining !== 1 ? "s" : ""} to go</div>
+      }
+    </div>
+  );
+}
+
+// ── SET GOAL MODAL ────────────────────────────────────────────────────────────
+function SetGoalModal({ currentGoalRewardId, onSelect, onClose }) {
+  const [rewards, setRewards] = useState([]);
+
+  useEffect(() => {
+    supabase.from("reward_items").select("*").eq("is_active", true).order("merit_cost")
+      .then(({ data }) => setRewards(data || []));
+  }, []);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{ maxWidth: 560 }}>
+        <h2 className="modal-title">🎯 Set a Savings Goal</h2>
+        <p style={{ color: "var(--grey-600)", marginBottom: 20, fontSize: "0.9rem" }}>Pick the reward you're saving toward.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, maxHeight: "52vh", overflowY: "auto", paddingRight: 4 }}>
+          {rewards.map(r => (
+            <div key={r.id} className={`cat-card ${r.id === currentGoalRewardId ? "selected" : ""}`} onClick={() => onSelect(r)}>
+              <div className="cat-card-name">{r.name}</div>
+              <div className="cat-card-pts">{r.merit_cost}<span> merits</span></div>
+            </div>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── KID DASHBOARD ─────────────────────────────────────────────────────────────
 function KidDashboard({ setPage }) {
   const { profile } = useApp();
   const [balance, setBalance] = useState(null);
   const [pending, setPending] = useState({ claims: 0, rewards: 0 });
   const [recent, setRecent] = useState([]);
+  const [goal, setGoal] = useState(null);
+  const [showGoalModal, setShowGoalModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function load() {
-      const [{ data: bal }, { count: cc }, { count: rc }, { data: claims }, { data: reqs }] = await Promise.all([
-        supabase.from("merit_balances").select("*").eq("kid_id", profile.id).single(),
-        supabase.from("merit_claims").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
-        supabase.from("reward_requests").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
-        supabase.from("merit_claims").select("*, merit_activities(name)").eq("kid_id", profile.id).order("claimed_at", { ascending: false }).limit(5),
-        supabase.from("reward_requests").select("*, reward_items(name)").eq("kid_id", profile.id).order("requested_at", { ascending: false }).limit(5),
-      ]);
-      setBalance(bal);
-      setPending({ claims: cc || 0, rewards: rc || 0 });
-      const all = [
-        ...(claims || []).map(x => ({ type: "earn", label: x.merit_activities?.name, pts: x.claimed_merits, date: x.claimed_at, status: x.status })),
-        ...(reqs || []).map(x => ({ type: "spend", label: x.reward_items?.name, pts: x.merits_held, date: x.requested_at, status: x.status })),
-      ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
-      setRecent(all);
-      setLoading(false);
-    }
-    load();
-  }, [profile.id]);
+  useEffect(() => { load(); }, [profile.id]);
+
+  async function load() {
+    const [{ data: bal }, { count: cc }, { count: rc }, { data: claims }, { data: reqs }, { data: g }] = await Promise.all([
+      supabase.from("merit_balances").select("*").eq("kid_id", profile.id).single(),
+      supabase.from("merit_claims").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
+      supabase.from("reward_requests").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
+      supabase.from("merit_claims").select("*, merit_activities(name)").eq("kid_id", profile.id).order("claimed_at", { ascending: false }).limit(5),
+      supabase.from("reward_requests").select("*, reward_items(name)").eq("kid_id", profile.id).order("requested_at", { ascending: false }).limit(5),
+      supabase.from("kid_goals").select("*, reward_items(id, name, merit_cost)").eq("kid_id", profile.id).maybeSingle(),
+    ]);
+    setBalance(bal);
+    setPending({ claims: cc || 0, rewards: rc || 0 });
+    setGoal(g);
+    const all = [
+      ...(claims || []).map(x => ({ type: "earn", label: x.merit_activities?.name, pts: x.claimed_merits, date: x.claimed_at, status: x.status })),
+      ...(reqs || []).map(x => ({ type: "spend", label: x.reward_items?.name, pts: x.merits_held, date: x.requested_at, status: x.status })),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
+    setRecent(all);
+    setLoading(false);
+  }
+
+  async function handleSetGoal(reward) {
+    await supabase.from("kid_goals").upsert(
+      { kid_id: profile.id, reward_id: reward.id, set_at: new Date().toISOString() },
+      { onConflict: "kid_id" }
+    );
+    setShowGoalModal(false);
+    const { data: g } = await supabase.from("kid_goals").select("*, reward_items(id, name, merit_cost)").eq("kid_id", profile.id).maybeSingle();
+    setGoal(g);
+  }
+
+  async function handleClearGoal() {
+    await supabase.from("kid_goals").delete().eq("kid_id", profile.id);
+    setGoal(null);
+  }
 
   if (loading) return <div className="empty"><div className="empty-icon">⏳</div><p>Loading…</p></div>;
 
@@ -1018,6 +1139,13 @@ function KidDashboard({ setPage }) {
           ⏳ You have {pending.claims} merit claim(s) and {pending.rewards} reward request(s) pending parent approval.
         </div>
       )}
+
+      <GoalProgressCard
+        goal={goal}
+        balance={balance?.current_balance ?? 0}
+        onSetGoal={() => setShowGoalModal(true)}
+        onClearGoal={handleClearGoal}
+      />
 
       <div className="two-col" style={{ marginBottom: 24 }}>
         <button className="btn btn-primary" style={{ padding: "18px", fontSize: "1rem" }} onClick={() => setPage("claim")}>
@@ -1043,6 +1171,14 @@ function KidDashboard({ setPage }) {
           ))
         }
       </div>
+
+      {showGoalModal && (
+        <SetGoalModal
+          currentGoalRewardId={goal?.reward_items?.id}
+          onSelect={handleSetGoal}
+          onClose={() => setShowGoalModal(false)}
+        />
+      )}
     </div>
   );
 }
