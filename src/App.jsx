@@ -1500,6 +1500,7 @@ function KidDashboard({ setPage }) {
   const [approvedRewardCount, setApprovedRewardCount] = useState(0);
   const [activeSuspensions, setActiveSuspensions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [goalMsg, setGoalMsg] = useState(null);
 
   useEffect(() => { load(); }, [profile.id]);
 
@@ -1531,10 +1532,16 @@ function KidDashboard({ setPage }) {
   }
 
   async function handleSetGoal(reward) {
-    await supabase.from("kid_goals").upsert(
+    setGoalMsg(null);
+    const { error } = await supabase.from("kid_goals").upsert(
       { kid_id: profile.id, reward_id: reward.id, set_at: new Date().toISOString() },
       { onConflict: "kid_id" }
     );
+    if (error) {
+      setShowGoalModal(false);
+      setGoalMsg({ type: "error", text: `Couldn't save goal: ${error.message}` });
+      return;
+    }
     setShowGoalModal(false);
     const { data: g } = await supabase.from("kid_goals").select("*, reward_items(id, name, merit_cost)").eq("kid_id", profile.id).maybeSingle();
     setGoal(g);
@@ -1578,10 +1585,13 @@ function KidDashboard({ setPage }) {
         streak={streak}
       />
 
+      {goalMsg && (
+        <div className={`msg ${goalMsg.type}`} style={{ marginBottom: 12 }}>{goalMsg.text}</div>
+      )}
       <GoalProgressCard
         goal={goal}
         balance={balance?.current_balance ?? 0}
-        onSetGoal={() => setShowGoalModal(true)}
+        onSetGoal={() => { setGoalMsg(null); setShowGoalModal(true); }}
         onClearGoal={handleClearGoal}
       />
 
