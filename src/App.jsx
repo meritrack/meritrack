@@ -1023,90 +1023,343 @@ function BonusMerits() {
   );
 }
 
+// ── CATALOGUE EDITOR MODALS ───────────────────────────────────────────────────
+function MeritActivityModal({ item, onSave, onClose }) {
+  const isEdit = !!item?.id;
+  const [form, setForm] = useState({
+    name: item?.name ?? "",
+    base_merits: item?.base_merits ?? "",
+    is_time_based: item?.is_time_based ?? false,
+    tier_1_merits: item?.tier_1_merits ?? "",
+    tier_2_merits: item?.tier_2_merits ?? "",
+    tier_3_merits: item?.tier_3_merits ?? "",
+    daily_cap: item?.daily_cap ?? "",
+    notes: item?.notes ?? "",
+    is_active: item?.is_active !== false,
+  });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  async function handleSave() {
+    setLoading(true); setErr(null);
+    const payload = {
+      name: form.name,
+      base_merits: parseInt(form.base_merits) || 0,
+      is_time_based: form.is_time_based,
+      tier_1_merits: form.is_time_based ? (parseInt(form.tier_1_merits) || null) : null,
+      tier_2_merits: form.is_time_based ? (parseInt(form.tier_2_merits) || null) : null,
+      tier_3_merits: form.is_time_based ? (parseInt(form.tier_3_merits) || null) : null,
+      daily_cap: form.is_time_based ? (parseInt(form.daily_cap) || null) : null,
+      notes: form.notes || null,
+      is_active: form.is_active,
+    };
+    const { error } = isEdit
+      ? await supabase.from("merit_activities").update(payload).eq("id", item.id)
+      : await supabase.from("merit_activities").insert(payload);
+    if (error) { setErr(error.message); setLoading(false); return; }
+    onSave();
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h2 className="modal-title">{isEdit ? "✏️ Edit" : "➕ Add"} Merit Activity</h2>
+        {err && <div className="alert alert-error">{err}</div>}
+        <div className="field"><label>Activity Name</label><input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Morning Run" required /></div>
+        <div className="field"><label>Base Merits</label><input type="number" min="1" value={form.base_merits} onChange={e => set("base_merits", e.target.value)} required /></div>
+        <div className="field" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <input type="checkbox" id="timed" checked={form.is_time_based} onChange={e => set("is_time_based", e.target.checked)} style={{ width: "auto" }} />
+          <label htmlFor="timed" style={{ textTransform: "none", fontSize: "0.9rem", margin: 0 }}>Time-based (different merits per hour)</label>
+        </div>
+        {form.is_time_based && (
+          <div className="three-col">
+            <div className="field"><label>1 Hour</label><input type="number" value={form.tier_1_merits} onChange={e => set("tier_1_merits", e.target.value)} /></div>
+            <div className="field"><label>2 Hours</label><input type="number" value={form.tier_2_merits} onChange={e => set("tier_2_merits", e.target.value)} /></div>
+            <div className="field"><label>3+ Hours</label><input type="number" value={form.tier_3_merits} onChange={e => set("tier_3_merits", e.target.value)} /></div>
+          </div>
+        )}
+        {form.is_time_based && <div className="field"><label>Daily Cap (merits)</label><input type="number" value={form.daily_cap} onChange={e => set("daily_cap", e.target.value)} /></div>}
+        <div className="field"><label>Notes</label><textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional description…" /></div>
+        {isEdit && (
+          <div className="field" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input type="checkbox" id="act-active" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} style={{ width: "auto" }} />
+            <label htmlFor="act-active" style={{ textTransform: "none", fontSize: "0.9rem", margin: 0 }}>Active (visible to kids)</label>
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading || !form.name || !form.base_merits}>{loading ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RewardItemModal({ item, onSave, onClose }) {
+  const isEdit = !!item?.id;
+  const [form, setForm] = useState({
+    name: item?.name ?? "",
+    merit_cost: item?.merit_cost ?? "",
+    advance_notice_hours: item?.advance_notice_hours ?? 0,
+    is_financial: item?.is_financial ?? false,
+    notes: item?.notes ?? "",
+    is_active: item?.is_active !== false,
+  });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  async function handleSave() {
+    setLoading(true); setErr(null);
+    const payload = {
+      name: form.name,
+      merit_cost: parseInt(form.merit_cost) || 0,
+      advance_notice_hours: parseInt(form.advance_notice_hours) || 0,
+      is_financial: form.is_financial,
+      notes: form.notes || null,
+      is_active: form.is_active,
+    };
+    const { error } = isEdit
+      ? await supabase.from("reward_items").update(payload).eq("id", item.id)
+      : await supabase.from("reward_items").insert(payload);
+    if (error) { setErr(error.message); setLoading(false); return; }
+    onSave();
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h2 className="modal-title">{isEdit ? "✏️ Edit" : "➕ Add"} Reward</h2>
+        {err && <div className="alert alert-error">{err}</div>}
+        <div className="field"><label>Reward Name</label><input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Movie Night Pick" required /></div>
+        <div className="field"><label>Merit Cost</label><input type="number" min="1" value={form.merit_cost} onChange={e => set("merit_cost", e.target.value)} required /></div>
+        <div className="field"><label>Advance Notice (hours)</label><input type="number" min="0" value={form.advance_notice_hours} onChange={e => set("advance_notice_hours", e.target.value)} /></div>
+        <div className="field" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <input type="checkbox" id="rew-fin" checked={form.is_financial} onChange={e => set("is_financial", e.target.checked)} style={{ width: "auto" }} />
+          <label htmlFor="rew-fin" style={{ textTransform: "none", fontSize: "0.9rem", margin: 0 }}>💰 Financial reward (requires 1,000 merits earned to redeem)</label>
+        </div>
+        <div className="field"><label>Notes</label><textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional description…" /></div>
+        {isEdit && (
+          <div className="field" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input type="checkbox" id="rew-active" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} style={{ width: "auto" }} />
+            <label htmlFor="rew-active" style={{ textTransform: "none", fontSize: "0.9rem", margin: 0 }}>Active (visible to kids)</label>
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading || !form.name || !form.merit_cost}>{loading ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DemeritBehaviourModal({ item, onSave, onClose }) {
+  const isEdit = !!item?.id;
+  const [form, setForm] = useState({
+    name: item?.name ?? "",
+    demerit_points: item?.demerit_points ?? "",
+    baseline_suspension_days: item?.baseline_suspension_days ?? "",
+    suspension_type: item?.suspension_type ?? "none",
+    notes: item?.notes ?? "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  async function handleSave() {
+    setLoading(true); setErr(null);
+    const payload = {
+      name: form.name,
+      demerit_points: parseInt(form.demerit_points) || 0,
+      baseline_suspension_days: parseInt(form.baseline_suspension_days) || null,
+      suspension_type: form.suspension_type,
+      notes: form.notes || null,
+    };
+    const { error } = isEdit
+      ? await supabase.from("demerit_behaviours").update(payload).eq("id", item.id)
+      : await supabase.from("demerit_behaviours").insert(payload);
+    if (error) { setErr(error.message); setLoading(false); return; }
+    onSave();
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h2 className="modal-title">{isEdit ? "✏️ Edit" : "➕ Add"} Demerit Behaviour</h2>
+        {err && <div className="alert alert-error">{err}</div>}
+        <div className="field"><label>Behaviour Name</label><input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Ignoring House Rules" required /></div>
+        <div className="field"><label>Demerit Points</label><input type="number" min="1" value={form.demerit_points} onChange={e => set("demerit_points", e.target.value)} required /></div>
+        <div className="two-col">
+          <div className="field"><label>Suspension Days</label><input type="number" min="0" value={form.baseline_suspension_days} onChange={e => set("baseline_suspension_days", e.target.value)} placeholder="0 = none" /></div>
+          <div className="field"><label>Suspension Type</label>
+            <select value={form.suspension_type} onChange={e => set("suspension_type", e.target.value)}>
+              <option value="none">None</option>
+              <option value="sleepover">Sleepovers</option>
+              <option value="outing">Outings</option>
+              <option value="revolut">Revolut</option>
+              <option value="screen_time">Screen Time</option>
+              <option value="mamina_tatina">Mamina & Tatina</option>
+              <option value="full">Full (all privileges)</option>
+            </select>
+          </div>
+        </div>
+        <div className="field"><label>Notes</label><textarea value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Optional notes…" /></div>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading || !form.name || !form.demerit_points}>{loading ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── CATALOGUES (PARENT + KID VIEW) ────────────────────────────────────────────
 function Catalogues() {
   const { profile } = useApp();
+  const isParent = profile?.role === "parent";
   const [tab, setTab] = useState("merits");
   const [merits, setMerits] = useState([]);
   const [rewards, setRewards] = useState([]);
   const [demerits, setDemerits] = useState([]);
+  const [editItem, setEditItem] = useState(null);
+  const [editType, setEditType] = useState(null);
 
-  useEffect(() => {
-    Promise.all([
-      supabase.from("merit_activities").select("*").eq("is_active", true).order("name"),
-      supabase.from("reward_items").select("*").eq("is_active", true).order("merit_cost"),
+  useEffect(() => { loadAll(); }, []);
+
+  async function loadAll() {
+    const [{ data: m }, { data: r }, { data: d }] = await Promise.all([
+      isParent
+        ? supabase.from("merit_activities").select("*").order("name")
+        : supabase.from("merit_activities").select("*").eq("is_active", true).order("name"),
+      isParent
+        ? supabase.from("reward_items").select("*").order("merit_cost")
+        : supabase.from("reward_items").select("*").eq("is_active", true).order("merit_cost"),
       supabase.from("demerit_behaviours").select("*").order("name"),
-    ]).then(([{ data: m }, { data: r }, { data: d }]) => {
-      setMerits(m || []); setRewards(r || []); setDemerits(d || []);
-    });
-  }, []);
+    ]);
+    setMerits(m || []); setRewards(r || []); setDemerits(d || []);
+  }
+
+  function openAdd(type) { setEditType(type); setEditItem({}); }
+  function openEdit(type, item) { setEditType(type); setEditItem(item); }
+  function closeModal() { setEditItem(null); setEditType(null); }
+  function afterSave() { closeModal(); loadAll(); }
 
   return (
     <div>
-      <div className="page-header"><h1>Catalogues</h1><p>All activities, rewards, and demerit behaviours</p></div>
+      <div className="page-header">
+        <h1>Catalogues</h1>
+        <p>{isParent ? "Manage activities, rewards, and demerit behaviours" : "All activities, rewards, and demerit behaviours"}</p>
+      </div>
       <div className="tab-row">
         <button className={`tab-btn ${tab === "merits" ? "active" : ""}`} onClick={() => setTab("merits")}>✨ Earn Merits</button>
         <button className={`tab-btn ${tab === "rewards" ? "active" : ""}`} onClick={() => setTab("rewards")}>🎁 Rewards</button>
-        {profile?.role === "parent" && <button className={`tab-btn ${tab === "demerits" ? "active" : ""}`} onClick={() => setTab("demerits")}>⚠️ Demerits</button>}
+        {isParent && <button className={`tab-btn ${tab === "demerits" ? "active" : ""}`} onClick={() => setTab("demerits")}>⚠️ Demerits</button>}
       </div>
 
       {tab === "merits" && (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Activity</th><th>Merits</th><th>Notes</th></tr></thead>
-            <tbody>
-              {merits.map(m => (
-                <tr key={m.id}>
-                  <td><strong>{m.name}</strong></td>
-                  <td>
-                    {m.is_time_based
-                      ? <span>{m.tier_1_merits} / {m.tier_2_merits}{m.tier_3_merits ? ` / ${m.tier_3_merits}` : ""} <small style={{ color: "var(--grey-400)" }}>(cap {m.daily_cap})</small></span>
-                      : <span className="merit-pts-badge">{m.base_merits}</span>
-                    }
-                  </td>
-                  <td style={{ color: "var(--grey-600)", fontSize: "0.85rem" }}>{m.notes}</td>
+        <>
+          {isParent && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => openAdd("merit")}>➕ Add Activity</button>
+            </div>
+          )}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Activity</th><th>Merits</th><th>Notes</th>
+                  {isParent && <><th>Status</th><th>Actions</th></>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {merits.map(m => (
+                  <tr key={m.id}>
+                    <td><strong>{m.name}</strong></td>
+                    <td>
+                      {m.is_time_based
+                        ? <span>{m.tier_1_merits} / {m.tier_2_merits}{m.tier_3_merits ? ` / ${m.tier_3_merits}` : ""} <small style={{ color: "var(--grey-400)" }}>(cap {m.daily_cap})</small></span>
+                        : <span className="merit-pts-badge">{m.base_merits}</span>
+                      }
+                    </td>
+                    <td style={{ color: "var(--grey-600)", fontSize: "0.85rem" }}>{m.notes}</td>
+                    {isParent && <>
+                      <td><span className={`badge ${m.is_active ? "badge-approved" : "badge-declined"}`}>{m.is_active ? "Active" : "Inactive"}</span></td>
+                      <td><button className="btn btn-ghost btn-sm" onClick={() => openEdit("merit", m)}>✏️ Edit</button></td>
+                    </>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {tab === "rewards" && (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Reward</th><th>Cost</th><th>Notice</th><th>Notes</th></tr></thead>
-            <tbody>
-              {rewards.map(r => (
-                <tr key={r.id}>
-                  <td><strong>{r.name}</strong></td>
-                  <td><span className="merit-pts-badge">{r.merit_cost}</span></td>
-                  <td style={{ fontSize: "0.85rem" }}>{r.advance_notice_hours > 0 ? `${r.advance_notice_hours}h` : "—"}</td>
-                  <td style={{ color: "var(--grey-600)", fontSize: "0.85rem" }}>{r.notes}</td>
+        <>
+          {isParent && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => openAdd("reward")}>➕ Add Reward</button>
+            </div>
+          )}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reward</th><th>Cost</th><th>Notice</th><th>Notes</th>
+                  {isParent && <><th>Status</th><th>Actions</th></>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rewards.map(r => (
+                  <tr key={r.id}>
+                    <td>
+                      <strong>{r.name}</strong>
+                      {r.is_financial && <span style={{ marginLeft: 6, fontSize: "0.72rem", background: "var(--gold-light)", color: "#8B5E0A", padding: "2px 7px", borderRadius: 99, fontWeight: 600 }}>💰</span>}
+                    </td>
+                    <td><span className="merit-pts-badge">{r.merit_cost}</span></td>
+                    <td style={{ fontSize: "0.85rem" }}>{r.advance_notice_hours > 0 ? `${r.advance_notice_hours}h` : "—"}</td>
+                    <td style={{ color: "var(--grey-600)", fontSize: "0.85rem" }}>{r.notes}</td>
+                    {isParent && <>
+                      <td><span className={`badge ${r.is_active ? "badge-approved" : "badge-declined"}`}>{r.is_active ? "Active" : "Inactive"}</span></td>
+                      <td><button className="btn btn-ghost btn-sm" onClick={() => openEdit("reward", r)}>✏️ Edit</button></td>
+                    </>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
-      {tab === "demerits" && profile?.role === "parent" && (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Behaviour</th><th>Demerits</th><th>Suspension</th><th>Notes</th></tr></thead>
-            <tbody>
-              {demerits.map(d => (
-                <tr key={d.id}>
-                  <td><strong>{d.name}</strong></td>
-                  <td><span style={{ color: "var(--red)", fontWeight: 700 }}>−{d.demerit_points}</span></td>
-                  <td style={{ fontSize: "0.85rem" }}>{d.baseline_suspension_days ? `${d.baseline_suspension_days}d (${d.suspension_type})` : "—"}</td>
-                  <td style={{ color: "var(--grey-600)", fontSize: "0.85rem" }}>{d.notes || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {tab === "demerits" && isParent && (
+        <>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => openAdd("demerit")}>➕ Add Behaviour</button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Behaviour</th><th>Demerits</th><th>Suspension</th><th>Notes</th><th>Actions</th></tr></thead>
+              <tbody>
+                {demerits.map(d => (
+                  <tr key={d.id}>
+                    <td><strong>{d.name}</strong></td>
+                    <td><span style={{ color: "var(--red)", fontWeight: 700 }}>−{d.demerit_points}</span></td>
+                    <td style={{ fontSize: "0.85rem" }}>{d.baseline_suspension_days ? `${d.baseline_suspension_days}d (${d.suspension_type})` : "—"}</td>
+                    <td style={{ color: "var(--grey-600)", fontSize: "0.85rem" }}>{d.notes || "—"}</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={() => openEdit("demerit", d)}>✏️ Edit</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
+
+      {editItem !== null && editType === "merit"   && <MeritActivityModal    item={editItem} onSave={afterSave} onClose={closeModal} />}
+      {editItem !== null && editType === "reward"  && <RewardItemModal       item={editItem} onSave={afterSave} onClose={closeModal} />}
+      {editItem !== null && editType === "demerit" && <DemeritBehaviourModal item={editItem} onSave={afterSave} onClose={closeModal} />}
     </div>
   );
 }
