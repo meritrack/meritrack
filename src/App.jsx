@@ -1739,8 +1739,8 @@ function RequestReward() {
 
   function getFinancialLockReason(r) {
     if (!r.is_financial) return null;
-    if (totalEarned < FINANCIAL_TRUST_THRESHOLD)
-      return `🔒 Unlocks at ${FINANCIAL_TRUST_THRESHOLD} total merits earned (you have ${totalEarned})`;
+    if (balance < FINANCIAL_TRUST_THRESHOLD)
+      return `🔒 Unlocks when your balance reaches ${FINANCIAL_TRUST_THRESHOLD} merits (you have ${balance})`;
     if (balance - r.merit_cost < FINANCIAL_BALANCE_FLOOR)
       return `🔒 You must keep ${FINANCIAL_BALANCE_FLOOR} merits after spending (need ${r.merit_cost + FINANCIAL_BALANCE_FLOOR - balance} more)`;
     return null;
@@ -1750,8 +1750,8 @@ function RequestReward() {
     if (!selected) return;
     if (balance < selected.merit_cost) { setMsg({ type: "error", text: "Not enough merits for this reward." }); return; }
     if (selected.is_financial) {
-      if (totalEarned < FINANCIAL_TRUST_THRESHOLD) {
-        setMsg({ type: "error", text: `This reward requires ${FINANCIAL_TRUST_THRESHOLD} total merits earned. You have ${totalEarned}.` });
+      if (balance < FINANCIAL_TRUST_THRESHOLD) {
+        setMsg({ type: "error", text: `Your balance needs to reach ${FINANCIAL_TRUST_THRESHOLD} merits to unlock financial rewards. Current balance: ${balance}.` });
         return;
       }
       if (balance - selected.merit_cost < FINANCIAL_BALANCE_FLOOR) {
@@ -1768,7 +1768,7 @@ function RequestReward() {
     setLoading(false);
   }
 
-  const trustReached = totalEarned >= FINANCIAL_TRUST_THRESHOLD;
+  const trustReached = balance >= FINANCIAL_TRUST_THRESHOLD;
 
   return (
     <div>
@@ -1778,7 +1778,7 @@ function RequestReward() {
 
       {!trustReached && (
         <div className="alert alert-info" style={{ marginBottom: 20 }}>
-          🔒 Financial rewards (Revolut, Mamina/Tatina, budgets) unlock at <strong>{FINANCIAL_TRUST_THRESHOLD} total merits earned</strong>. You're at <strong>{totalEarned}</strong> — {FINANCIAL_TRUST_THRESHOLD - totalEarned} to go!
+          🔒 Financial rewards (Revolut, Mamina/Tatina, budgets) unlock when your balance reaches <strong>{FINANCIAL_TRUST_THRESHOLD} merits</strong>. Your balance is <strong>{balance}</strong> — {FINANCIAL_TRUST_THRESHOLD - balance} to go.
         </div>
       )}
 
