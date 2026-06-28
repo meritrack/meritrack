@@ -284,6 +284,22 @@ const useApp = () => useContext(AppContext);
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" }) : "—";
 const fmtTime = (d) => d ? new Date(d).toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" }) : "";
 
+function computeStreak(approvedClaims) {
+  if (!approvedClaims?.length) return 0;
+  const toDay = (d) => new Date(d).toLocaleDateString("en-CA"); // YYYY-MM-DD
+  const today = toDay(new Date());
+  const yesterday = toDay(new Date(Date.now() - 86400000));
+  const days = [...new Set(approvedClaims.map(c => toDay(c.claimed_at)))].sort().reverse();
+  if (!days.length || (days[0] !== today && days[0] !== yesterday)) return 0;
+  let streak = 1;
+  for (let i = 1; i < days.length; i++) {
+    const diff = Math.round((new Date(days[i - 1]) - new Date(days[i])) / 86400000);
+    if (diff === 1) streak++;
+    else break;
+  }
+  return streak;
+}
+
 function StatusBadge({ status }) {
   return <span className={`badge badge-${status}`}>
     {status === "pending" ? "⏳" : status === "approved" ? "✅" : "❌"} {status}
@@ -1004,6 +1020,57 @@ function Catalogues() {
   );
 }
 
+// ── ACHIEVEMENT BADGES ────────────────────────────────────────────────────────
+function AchievementBadges({ totalEarned, approvedRewardCount, goalSet, streak }) {
+  const badges = [
+    { id: "first_steps",    icon: "🌱", name: "First Steps",    desc: "Earn your first merit",          earned: totalEarned >= 1 },
+    { id: "century",        icon: "💯", name: "Century Club",   desc: "Earn 100 total merits",          earned: totalEarned >= 100 },
+    { id: "rising_star",    icon: "⭐", name: "Rising Star",    desc: "Earn 250 total merits",          earned: totalEarned >= 250 },
+    { id: "high_achiever",  icon: "🏅", name: "High Achiever",  desc: "Earn 500 total merits",          earned: totalEarned >= 500 },
+    { id: "merit_master",   icon: "🏆", name: "Merit Master",   desc: "Earn 1,000 total merits",        earned: totalEarned >= 1000 },
+    { id: "redeemer",       icon: "🎁", name: "Redeemer",       desc: "Have your first reward approved", earned: approvedRewardCount >= 1 },
+    { id: "dreamer",        icon: "🎯", name: "Dreamer",        desc: "Set a savings goal",             earned: goalSet },
+    { id: "on_fire",        icon: "🔥", name: "On Fire",        desc: "3-day claiming streak",          earned: streak >= 3 },
+    { id: "unstoppable",    icon: "⚡", name: "Unstoppable",    desc: "7-day claiming streak",          earned: streak >= 7 },
+    { id: "iron_will",      icon: "💪", name: "Iron Will",      desc: "14-day claiming streak",         earned: streak >= 14 },
+  ];
+
+  const earnedCount = badges.filter(b => b.earned).length;
+
+  return (
+    <div className="card" style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>🏅 Achievements</div>
+        <span style={{ fontSize: "0.82rem", color: "var(--grey-400)", fontWeight: 600 }}>{earnedCount} / {badges.length} unlocked</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))", gap: 10 }}>
+        {badges.map(b => (
+          <div key={b.id} title={b.desc} style={{
+            textAlign: "center", padding: "14px 8px", borderRadius: "var(--radius-sm)",
+            background: b.earned ? "var(--gold-light)" : "var(--grey-100)",
+            border: `1.5px solid ${b.earned ? "var(--gold)" : "var(--grey-200)"}`,
+            opacity: b.earned ? 1 : 0.45,
+            cursor: "default",
+            transition: "all 0.2s",
+          }}>
+            <div style={{ fontSize: "1.9rem", marginBottom: 6 }}>{b.earned ? b.icon : "🔒"}</div>
+            <div style={{
+              fontSize: "0.72rem", fontWeight: 600, lineHeight: 1.25,
+              color: b.earned ? "var(--navy)" : "var(--grey-400)",
+            }}>{b.name}</div>
+            {b.earned && <div style={{ fontSize: "0.65rem", color: "var(--gold)", fontWeight: 700, marginTop: 3 }}>✓ Earned</div>}
+          </div>
+        ))}
+      </div>
+      {streak > 0 && (
+        <div style={{ marginTop: 14, padding: "10px 14px", background: "var(--gold-light)", borderRadius: "var(--radius-sm)", fontSize: "0.85rem", color: "#8B5E0A", fontWeight: 600 }}>
+          🔥 Current streak: {streak} day{streak !== 1 ? "s" : ""} — keep it going!
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── GOAL PROGRESS CARD ────────────────────────────────────────────────────────
 function GoalProgressCard({ goal, balance, onSetGoal, onClearGoal }) {
   if (!goal?.reward_items) {
@@ -1085,22 +1152,28 @@ function KidDashboard({ setPage }) {
   const [recent, setRecent] = useState([]);
   const [goal, setGoal] = useState(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [approvedRewardCount, setApprovedRewardCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { load(); }, [profile.id]);
 
   async function load() {
-    const [{ data: bal }, { count: cc }, { count: rc }, { data: claims }, { data: reqs }, { data: g }] = await Promise.all([
+    const [{ data: bal }, { count: cc }, { count: rc }, { data: claims }, { data: reqs }, { data: g }, { data: approvedClaims }, { count: arc }] = await Promise.all([
       supabase.from("merit_balances").select("*").eq("kid_id", profile.id).single(),
       supabase.from("merit_claims").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
       supabase.from("reward_requests").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "pending"),
       supabase.from("merit_claims").select("*, merit_activities(name)").eq("kid_id", profile.id).order("claimed_at", { ascending: false }).limit(5),
       supabase.from("reward_requests").select("*, reward_items(name)").eq("kid_id", profile.id).order("requested_at", { ascending: false }).limit(5),
       supabase.from("kid_goals").select("*, reward_items(id, name, merit_cost)").eq("kid_id", profile.id).maybeSingle(),
+      supabase.from("merit_claims").select("claimed_at").eq("kid_id", profile.id).eq("status", "approved").order("claimed_at", { ascending: false }).limit(50),
+      supabase.from("reward_requests").select("*", { count: "exact", head: true }).eq("kid_id", profile.id).eq("status", "approved"),
     ]);
     setBalance(bal);
     setPending({ claims: cc || 0, rewards: rc || 0 });
     setGoal(g);
+    setStreak(computeStreak(approvedClaims || []));
+    setApprovedRewardCount(arc || 0);
     const all = [
       ...(claims || []).map(x => ({ type: "earn", label: x.merit_activities?.name, pts: x.claimed_merits, date: x.claimed_at, status: x.status })),
       ...(reqs || []).map(x => ({ type: "spend", label: x.reward_items?.name, pts: x.merits_held, date: x.requested_at, status: x.status })),
@@ -1139,6 +1212,13 @@ function KidDashboard({ setPage }) {
           ⏳ You have {pending.claims} merit claim(s) and {pending.rewards} reward request(s) pending parent approval.
         </div>
       )}
+
+      <AchievementBadges
+        totalEarned={balance?.total_earned ?? 0}
+        approvedRewardCount={approvedRewardCount}
+        goalSet={!!goal}
+        streak={streak}
+      />
 
       <GoalProgressCard
         goal={goal}
